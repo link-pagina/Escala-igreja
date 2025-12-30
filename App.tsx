@@ -17,7 +17,6 @@ const App: React.FC = () => {
   const targetInfo = useMemo(() => getTargetMonthInfo(), []);
   const shiftDays = useMemo(() => getDaysForScale(targetInfo.year, targetInfo.month), [targetInfo]);
 
-  // Handle Auth changes
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -43,7 +42,6 @@ const App: React.FC = () => {
   const fetchData = async (userId: string) => {
     setLoading(true);
     try {
-      // Fetch People
       const { data: peopleData, error: peopleError } = await supabase
         .from('people')
         .select('*')
@@ -52,7 +50,6 @@ const App: React.FC = () => {
       if (peopleError) throw peopleError;
       setPeople(peopleData || []);
 
-      // Fetch Assignments
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
         .select('*')
@@ -77,7 +74,7 @@ const App: React.FC = () => {
     const { error } = await supabase.from('people').insert([newPerson]);
     if (error) {
       console.error('Erro ao salvar pessoa:', error);
-      fetchData(user.id); // Rollback
+      fetchData(user.id);
     }
   };
 
@@ -88,52 +85,39 @@ const App: React.FC = () => {
     const { error } = await supabase.from('people').delete().eq('id', id);
     if (error) {
       console.error('Erro ao deletar pessoa:', error);
-      fetchData(user.id); // Rollback
+      fetchData(user.id);
     }
   };
 
   const handleAssign = async (date: string, period: 'MANHÃ' | 'NOITE', slot: 1 | 2, personId: string) => {
     if (!user) return;
     
-    setAssignments(prev => {
-      const existingIdx = prev.findIndex(a => a.date === date && a.period === period);
-      const updated = [...prev];
+    const existingAssignIdx = assignments.findIndex(a => a.date === date && a.period === period);
+    const updatedAssignments = [...assignments];
 
-      if (existingIdx > -1) {
-        const item = { ...updated[existingIdx] };
-        if (slot === 1) item.person1Id = personId;
-        else item.person2Id = personId;
-        updated[existingIdx] = item;
-      } else {
-        updated.push({
-          date,
-          period,
-          person1Id: slot === 1 ? personId : '',
-          person2Id: slot === 2 ? personId : ''
-        });
-      }
-      return updated;
-    });
-
-    const existingAssign = assignments.find(a => a.date === date && a.period === period);
-    
-    if (existingAssign) {
+    if (existingAssignIdx > -1) {
+      const item = { ...updatedAssignments[existingAssignIdx] };
+      if (slot === 1) item.person1Id = personId;
+      else item.person2Id = personId;
+      updatedAssignments[existingAssignIdx] = item;
+      
+      setAssignments(updatedAssignments);
+      
       const updateData = slot === 1 ? { person1Id: personId } : { person2Id: personId };
-      const { error } = await supabase
+      await supabase
         .from('assignments')
         .update(updateData)
         .match({ date, period, user_id: user.id });
-      if (error) console.error('Erro ao atualizar:', error);
     } else {
-      const insertData = {
+      const newItem = {
         date,
         period,
         person1Id: slot === 1 ? personId : '',
         person2Id: slot === 2 ? personId : '',
         user_id: user.id
       };
-      const { error } = await supabase.from('assignments').insert([insertData]);
-      if (error) console.error('Erro ao inserir:', error);
+      setAssignments(prev => [...prev, newItem]);
+      await supabase.from('assignments').insert([newItem]);
     }
   };
 
@@ -150,35 +134,39 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-medium">Carregando seus dados...</p>
+          <p className="text-gray-500 font-medium">Sincronizando com a nuvem...</p>
         </div>
       </div>
     );
   }
 
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0];
+
   return (
-    <div className="min-h-screen pb-12">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <div className="min-h-screen pb-12 bg-gray-50">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-              <i className="fas fa-calendar-alt text-2xl"></i>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+              <i className="fas fa-calendar-check text-xl sm:text-2xl"></i>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900 leading-none">Sistema de Escala</h1>
-              <p className="text-sm text-gray-500 mt-1">
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight">Sistema de Escala</h1>
+              <p className="text-xs sm:text-sm text-gray-500 font-medium uppercase tracking-tighter">
                 {getMonthName(targetInfo.month)} {targetInfo.year}
                 {targetInfo.isTransitioned && (
-                  <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold uppercase">
-                    Próximo Mês
-                  </span>
+                  <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">PRÓXIMO</span>
                 )}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-6">
+            <div className="hidden md:flex flex-col items-end">
+              <span className="text-xs text-gray-400">Logado como</span>
+              <span className="text-sm font-semibold text-gray-700">{userName}</span>
+            </div>
+            
             <nav className="hidden sm:flex gap-1 p-1 bg-gray-100 rounded-lg">
               <button
                 onClick={() => setActiveTab('escala')}
@@ -201,10 +189,11 @@ const App: React.FC = () => {
                 Equipe
               </button>
             </nav>
+
             <button 
               onClick={handleLogout}
-              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-red-600 transition-colors"
-              title="Sair"
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
+              title="Sair do sistema"
             >
               <i className="fas fa-sign-out-alt"></i>
             </button>
@@ -212,67 +201,69 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 mt-8">
-        {/* Mobile Navigation Tabs */}
-        <div className="flex sm:hidden gap-1 p-1 bg-gray-100 rounded-lg mb-6">
+      <main className="max-w-4xl mx-auto px-4 mt-6 sm:mt-10">
+        <div className="flex sm:hidden gap-1 p-1 bg-gray-100 rounded-xl mb-6 shadow-inner">
           <button
             onClick={() => setActiveTab('escala')}
-            className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              activeTab === 'escala' 
-              ? 'bg-white text-blue-600 shadow-sm' 
-              : 'text-gray-500'
+            className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              activeTab === 'escala' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-500'
             }`}
           >
-            Escala
+            <i className="fas fa-list-ul mr-2"></i>Escala
           </button>
           <button
             onClick={() => setActiveTab('equipe')}
-            className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              activeTab === 'equipe' 
-              ? 'bg-white text-blue-600 shadow-sm' 
-              : 'text-gray-500'
+            className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              activeTab === 'equipe' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-500'
             }`}
           >
-            Equipe
+            <i className="fas fa-users mr-2"></i>Equipe
           </button>
         </div>
 
         {activeTab === 'equipe' ? (
-          <TeamManager
-            people={people}
-            onAdd={addPerson}
-            onRemove={removePerson}
-          />
+          <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
         ) : (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-              <h2 className="text-2xl font-bold text-gray-800">Escala de Serviço</h2>
-              <div className="flex gap-4 text-xs font-semibold uppercase text-gray-400">
-                <span className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-[#c5e1a5]"></div> Domingo
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">Cronograma Mensal</h2>
+                <p className="text-sm text-gray-400">Preencha os responsáveis por cada período</p>
+              </div>
+              <div className="flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-wider">
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#c5e1a5]/20 text-[#689f38]">
+                  <div className="w-2 h-2 rounded-full bg-[#c5e1a5] shadow-sm"></div> Domingo
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-[#4285f4]"></div> Quarta
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-600">
+                  <div className="w-2 h-2 rounded-full bg-[#4285f4] shadow-sm"></div> Quarta
                 </span>
               </div>
             </div>
             
-            {shiftDays.map((day, idx) => (
-              <ShiftCard
-                key={idx}
-                day={day}
-                people={people}
-                assignments={assignments}
-                onAssign={handleAssign}
-              />
-            ))}
+            <div className="grid grid-cols-1 gap-4">
+              {shiftDays.map((day, idx) => (
+                <ShiftCard
+                  key={idx}
+                  day={day}
+                  people={people}
+                  assignments={assignments}
+                  onAssign={handleAssign}
+                />
+              ))}
+            </div>
           </div>
         )}
       </main>
 
-      <footer className="max-w-4xl mx-auto px-4 mt-12 text-center text-xs text-gray-400">
-        <p>A escala é automaticamente trocada para o mês seguinte todo último dia do mês às 18:30.</p>
-        <p className="mt-1 italic">Conectado ao Supabase Cloud Sync</p>
+      <footer className="max-w-4xl mx-auto px-4 mt-16 text-center">
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-6"></div>
+        <p className="text-gray-400 text-xs font-medium">
+          Reset automático todo último dia do mês às 18:30
+        </p>
+        <div className="flex justify-center items-center gap-4 mt-4 opacity-50 grayscale">
+          <img src="https://xbttslpdmbzdfpyypdtj.supabase.co/storage/v1/object/public/logos/supabase.svg" alt="Supabase" className="h-4" />
+          <span className="text-[10px] text-gray-400">Powered by Supabase Auth & Cloud Data</span>
+        </div>
       </footer>
     </div>
   );
