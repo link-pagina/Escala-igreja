@@ -1,0 +1,5 @@
+{
+  "name": "Sistema de Escala",
+  "description": "Um sistema intuitivo para gerenciamento de escalas de voluntários, focando em Domingos e Quartas-feiras, com reset automático mensal e gestão de equipe.",
+  "requestFramePermissions": []
+}
