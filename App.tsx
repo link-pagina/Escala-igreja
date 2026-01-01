@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Person, Assignment, ShiftDay } from './types';
-import { getDaysForScale, getMonthName } from './utils/dateUtils';
+import { Person, Assignment, ShiftDay, Period } from './types';
+import { getDaysForScale, getMonthName, dateToId } from './utils/dateUtils';
 import TeamManager from './components/TeamManager';
 import ShiftCard from './components/ShiftCard';
 import Login from './components/Login';
@@ -14,7 +14,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'escala' | 'equipe'>('escala');
   const [loading, setLoading] = useState(true);
   
-  // Estado para controlar o mês visível, iniciando em Janeiro de 2026
+  // Controle da escala iniciando em Janeiro de 2026
   const [viewDate, setViewDate] = useState(new Date(2026, 0, 1));
 
   const currentMonth = viewDate.getMonth();
@@ -25,20 +25,14 @@ const App: React.FC = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchData(session.user.id);
-      } else {
-        setLoading(false);
-      }
+      if (session?.user) fetchData(session.user.id);
+      else setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchData(session.user.id);
-      } else {
-        setLoading(false);
-      }
+      if (session?.user) fetchData(session.user.id);
+      else setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -47,14 +41,17 @@ const App: React.FC = () => {
   const fetchData = async (userId: string) => {
     setLoading(true);
     try {
+      // Buscar Pessoas (Equipe)
       const { data: peopleData, error: peopleError } = await supabase
         .from('people')
         .select('*')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .order('name');
       
       if (peopleError) throw peopleError;
       setPeople(peopleData || []);
 
+      // Buscar Escala (Assignments)
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
         .select('*')
@@ -63,7 +60,7 @@ const App: React.FC = () => {
       if (assignmentsError) throw assignmentsError;
       setAssignments(assignmentsData || []);
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
+      console.error('Erro ao buscar dados do Supabase:', err);
     } finally {
       setLoading(false);
     }
@@ -74,11 +71,12 @@ const App: React.FC = () => {
     const newId = crypto.randomUUID();
     const newPerson = { id: newId, name, user_id: user.id };
     
-    setPeople(prev => [...prev, { id: newId, name }]);
+    // Update local state (Optimistic)
+    setPeople(prev => [...prev, { id: newId, name, user_id: user.id }]);
     
     const { error } = await supabase.from('people').insert([newPerson]);
     if (error) {
-      console.error('Erro ao salvar pessoa:', error);
+      console.error('Erro ao salvar pessoa no banco:', error);
       fetchData(user.id);
     }
   };
@@ -89,52 +87,63 @@ const App: React.FC = () => {
     
     const { error } = await supabase.from('people').delete().eq('id', id);
     if (error) {
-      console.error('Erro ao deletar pessoa:', error);
+      console.error('Erro ao remover do banco:', error);
       fetchData(user.id);
     }
   };
 
-  const handleAssign = async (date: string, period: 'MANHÃ' | 'NOITE', slot: 1 | 2, personId: string) => {
+  const handleAssign = async (date: string, period: Period, slot: 1 | 2, personId: string) => {
     if (!user) return;
     
-    const existingAssignIdx = assignments.findIndex(a => a.date === date && a.period === period);
+    const existingAssign = assignments.find(a => a.date === date && a.period === period);
     const updatedAssignments = [...assignments];
 
-    if (existingAssignIdx > -1) {
-      const item = { ...updatedAssignments[existingAssignIdx] };
-      if (slot === 1) item.person1Id = personId;
-      else item.person2Id = personId;
-      updatedAssignments[existingAssignIdx] = item;
+    let upsertData: any;
+
+    if (existingAssign) {
+      const updatedItem = { ...existingAssign };
+      if (slot === 1) updatedItem.person1Id = personId;
+      else updatedItem.person2Id = personId;
       
-      setAssignments(updatedAssignments);
-      
-      const updateData = slot === 1 ? { person1Id: personId } : { person2Id: personId };
-      await supabase
-        .from('assignments')
-        .update(updateData)
-        .match({ date, period, user_id: user.id });
+      upsertData = {
+        ...updatedItem,
+        user_id: user.id
+      };
+
+      const idx = updatedAssignments.findIndex(a => a.date === date && a.period === period);
+      updatedAssignments[idx] = updatedItem;
     } else {
-      const newItem = {
+      const newItem: Assignment = {
         date,
         period,
         person1Id: slot === 1 ? personId : '',
         person2Id: slot === 2 ? personId : '',
         user_id: user.id
       };
-      setAssignments(prev => [...prev, newItem]);
-      await supabase.from('assignments').insert([newItem]);
+      upsertData = newItem;
+      updatedAssignments.push(newItem);
     }
+
+    setAssignments(updatedAssignments);
+
+    // Salvar no Supabase usando upsert (ele identifica pela combinação de date e period se as constraints de unicidade estiverem configuradas, ou criamos um ID composto)
+    // Para simplificar e garantir funcionamento, usamos match nas colunas chave:
+    const { error } = await supabase
+      .from('assignments')
+      .upsert(upsertData, { onConflict: 'user_id,date,period' });
+
+    if (error) {
+      console.error('Erro ao salvar escala no banco:', error);
+      fetchData(user.id);
+    }
+  };
+
+  const changeMonth = (offset: number) => {
+    setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-  };
-
-  const changeMonth = (offset: number) => {
-    setViewDate(prev => {
-      const nextDate = new Date(prev.getFullYear(), prev.getMonth() + offset, 1);
-      return nextDate;
-    });
   };
 
   if (!user && !loading) {
@@ -144,9 +153,9 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
+        <div className="text-center animate-pulse">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-medium">Carregando dados...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando com Supabase...</p>
         </div>
       </div>
     );
@@ -162,9 +171,9 @@ const App: React.FC = () => {
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
               <i className="fas fa-calendar-check text-xl sm:text-2xl"></i>
             </div>
-            <div className="hidden sm:block">
+            <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">Escala 2026</h1>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-tighter">Gerenciamento Anual</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Sincronizado na Nuvem</p>
             </div>
           </div>
 
@@ -173,9 +182,7 @@ const App: React.FC = () => {
               <button
                 onClick={() => setActiveTab('escala')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  activeTab === 'escala' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-800'
+                  activeTab === 'escala' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
                 Escala
@@ -183,9 +190,7 @@ const App: React.FC = () => {
               <button
                 onClick={() => setActiveTab('equipe')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  activeTab === 'equipe' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-800'
+                  activeTab === 'equipe' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
                 Equipe
@@ -215,74 +220,69 @@ const App: React.FC = () => {
           <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
         ) : (
           <div className="space-y-6">
-            {/* Navegação de Mês */}
-            <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-4 sm:p-6 rounded-2xl shadow-xl mb-8">
+            {/* Navegação de Mês - Azul Escuro */}
+            <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-6 rounded-3xl shadow-2xl mb-10 transition-all hover:shadow-blue-900/20">
               <button 
                 onClick={() => changeMonth(-1)}
-                className="w-12 h-12 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-all active:scale-95"
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/30 transition-all active:scale-90"
               >
-                <i className="fas fa-chevron-left text-xl"></i>
+                <i className="fas fa-arrow-left text-xl"></i>
               </button>
               
               <div className="text-center">
-                <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-widest">
+                <h2 className="text-3xl sm:text-4xl font-black uppercase tracking-tighter">
                   {getMonthName(currentMonth)}
                 </h2>
-                <p className="text-blue-200 font-bold tracking-widest mt-1">{currentYear}</p>
+                <div className="flex items-center justify-center gap-2 mt-1">
+                  <div className="h-1 w-6 bg-blue-400 rounded-full"></div>
+                  <p className="text-blue-200 font-black tracking-[0.3em] text-sm">{currentYear}</p>
+                  <div className="h-1 w-6 bg-blue-400 rounded-full"></div>
+                </div>
               </div>
 
               <button 
                 onClick={() => changeMonth(1)}
-                className="w-12 h-12 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-all active:scale-95"
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/30 transition-all active:scale-90"
               >
-                <i className="fas fa-chevron-right text-xl"></i>
+                <i className="fas fa-arrow-right text-xl"></i>
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-6">
               <div>
                 <h3 className="text-lg font-bold text-gray-800">Cronograma de Atividades</h3>
-                <p className="text-sm text-gray-400">Defina os responsáveis para cada culto</p>
+                <p className="text-sm text-gray-400">Escalando responsáveis via Supabase Cloud</p>
               </div>
-              <div className="flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-wider">
-                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#c5e1a5]/20 text-[#689f38]">
-                  <div className="w-2 h-2 rounded-full bg-[#c5e1a5] shadow-sm"></div> Domingo
+              <div className="flex gap-3">
+                <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 text-[10px] font-bold uppercase tracking-wider border border-green-100">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Domingo
                 </span>
-                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-600">
-                  <div className="w-2 h-2 rounded-full bg-[#4285f4] shadow-sm"></div> Quarta
+                <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider border border-blue-100">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Quarta
                 </span>
               </div>
             </div>
             
             <div className="grid grid-cols-1 gap-6">
-              {shiftDays.length > 0 ? (
-                shiftDays.map((day, idx) => (
-                  <ShiftCard
-                    key={`${day.date.getTime()}-${idx}`}
-                    day={day}
-                    people={people}
-                    assignments={assignments}
-                    onAssign={handleAssign}
-                  />
-                ))
-              ) : (
-                <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-gray-200 text-gray-400">
-                  Nenhum dia de escala encontrado para este período.
-                </div>
-              )}
+              {shiftDays.map((day, idx) => (
+                <ShiftCard
+                  key={`${day.date.toISOString()}-${idx}`}
+                  day={day}
+                  people={people}
+                  assignments={assignments}
+                  onAssign={handleAssign}
+                />
+              ))}
             </div>
           </div>
         )}
       </main>
 
-      <footer className="max-w-4xl mx-auto px-4 mt-16 text-center">
-        <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-6"></div>
-        <p className="text-gray-400 text-xs font-medium">
-          Sistema de Escala &copy; 2026 - Controle de Voluntários
+      <footer className="max-w-4xl mx-auto px-4 mt-20 text-center">
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent mb-8"></div>
+        <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em]">
+          Gerenciador de Escala &copy; 2026
         </p>
-        <div className="flex justify-center items-center gap-4 mt-4 opacity-50 grayscale">
-          <img src="https://xbttslpdmbzdfpyypdtj.supabase.co/storage/v1/object/public/logos/supabase.svg" alt="Supabase" className="h-4" />
-        </div>
       </footer>
     </div>
   );
