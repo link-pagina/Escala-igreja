@@ -1,43 +1,13 @@
 
 import { ShiftDay, Period } from '../types';
 
-/**
- * Returns the month and year that should be displayed based on the rule:
- * Always on the last day of each month, starting at 18:30, the scale resets to the next month.
- */
-export const getTargetMonthInfo = (referenceDate: Date = new Date()) => {
-  const now = referenceDate;
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  
-  // Find last day of current month
-  const lastDay = new Date(year, month + 1, 0);
-  lastDay.setHours(18, 30, 0, 0);
-
-  if (now >= lastDay) {
-    // Show next month
-    const nextMonthDate = new Date(year, month + 1, 1);
-    return {
-      month: nextMonthDate.getMonth(),
-      year: nextMonthDate.getFullYear(),
-      isTransitioned: true
-    };
-  }
-
-  return {
-    month,
-    year,
-    isTransitioned: false
-  };
-};
-
 export const getDaysForScale = (year: number, month: number): ShiftDay[] => {
   const days: ShiftDay[] = [];
   const date = new Date(year, month, 1);
 
   while (date.getMonth() === month) {
     const dayOfWeek = date.getDay();
-    // 0 = Sunday, 3 = Wednesday
+    // 0 = Domingo, 3 = Quarta
     if (dayOfWeek === 0) {
       days.push({
         date: new Date(date),
@@ -66,7 +36,11 @@ export const formatDateDisplay = (date: Date): string => {
 };
 
 export const dateToId = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+  // Ajuste para evitar problemas de fuso horário ao converter para ID
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
 
 export const getMonthName = (monthIndex: number): string => {
