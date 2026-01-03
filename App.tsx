@@ -23,33 +23,46 @@ const App: React.FC = () => {
   const shiftDays = useMemo(() => getDaysForScale(currentYear, currentMonth), [currentYear, currentMonth]);
 
   useEffect(() => {
-    // Busca sessão inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        fetchData(currentUser.id);
-      } else {
+    // Busca a sessão inicial de forma assíncrona
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          await fetchData(currentUser.id);
+        }
+      } catch (error) {
+        console.error("Erro ao inicializar autenticação:", error);
+      } finally {
         setLoading(false);
       }
-    });
+    };
 
-    // Escuta mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    initAuth();
+
+    // Escuta mudanças de autenticação (Login, Logout, Token Refreshed)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const currentUser = session?.user ?? null;
-      setUser(currentUser);
       
-      if (event === 'SIGNED_IN' && currentUser) {
-        fetchData(currentUser.id);
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        setUser(currentUser);
+        if (currentUser) {
+          await fetchData(currentUser.id);
+        }
       } else if (event === 'SIGNED_OUT') {
-        // Limpa estados locais ao sair
+        // Limpeza rigorosa de todos os estados locais
+        setUser(null);
         setPeople([]);
         setAssignments([]);
+        setActiveTab('escala');
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchData = async (userId: string) => {
@@ -85,7 +98,6 @@ const App: React.FC = () => {
     const newId = crypto.randomUUID();
     const newPerson = { id: newId, name, user_id: user.id };
     
-    // Update local state (Optimistic)
     setPeople(prev => [...prev, { id: newId, name, user_id: user.id }]);
     
     const { error } = await supabase.from('people').insert([newPerson]);
@@ -157,10 +169,11 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       setLoading(true);
+      // O signOut do Supabase remove o token do localstorage e encerra a sessão no servidor
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
-      // Limpeza forçada dos estados caso o listener demore
+      // Limpeza imediata local para forçar o re-render
       setUser(null);
       setPeople([]);
       setAssignments([]);
@@ -172,19 +185,20 @@ const App: React.FC = () => {
     }
   };
 
-  if (!user && !loading) {
-    return <Login onLoginSuccess={() => {}} />;
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center animate-pulse">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Processando...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Aguarde...</p>
         </div>
       </div>
     );
+  }
+
+  // Se não houver usuário e não estiver carregando, mostra o Login
+  if (!user) {
+    return <Login onLoginSuccess={() => setLoading(true)} />;
   }
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0];
@@ -232,10 +246,10 @@ const App: React.FC = () => {
 
             <button 
               onClick={handleLogout}
-              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all border border-transparent hover:border-red-100 group"
               title="Encerrar Sessão"
             >
-              <i className="fas fa-sign-out-alt"></i>
+              <i className="fas fa-sign-out-alt group-hover:scale-110 transition-transform"></i>
             </button>
           </div>
         </div>
