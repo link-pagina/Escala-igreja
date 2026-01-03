@@ -23,16 +23,30 @@ const App: React.FC = () => {
   const shiftDays = useMemo(() => getDaysForScale(currentYear, currentMonth), [currentYear, currentMonth]);
 
   useEffect(() => {
+    // Busca sessão inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchData(session.user.id);
-      else setLoading(false);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchData(currentUser.id);
+      } else {
+        setLoading(false);
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchData(session.user.id);
-      else setLoading(false);
+    // Escuta mudanças de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      
+      if (event === 'SIGNED_IN' && currentUser) {
+        fetchData(currentUser.id);
+      } else if (event === 'SIGNED_OUT') {
+        // Limpa estados locais ao sair
+        setPeople([]);
+        setAssignments([]);
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -126,8 +140,6 @@ const App: React.FC = () => {
 
     setAssignments(updatedAssignments);
 
-    // Salvar no Supabase usando upsert (ele identifica pela combinação de date e period se as constraints de unicidade estiverem configuradas, ou criamos um ID composto)
-    // Para simplificar e garantir funcionamento, usamos match nas colunas chave:
     const { error } = await supabase
       .from('assignments')
       .upsert(upsertData, { onConflict: 'user_id,date,period' });
@@ -143,7 +155,21 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      // Limpeza forçada dos estados caso o listener demore
+      setUser(null);
+      setPeople([]);
+      setAssignments([]);
+      setActiveTab('escala');
+    } catch (error) {
+      console.error('Erro ao encerrar sessão:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!user && !loading) {
@@ -155,7 +181,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center animate-pulse">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando com Supabase...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Processando...</p>
         </div>
       </div>
     );
@@ -207,7 +233,7 @@ const App: React.FC = () => {
             <button 
               onClick={handleLogout}
               className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
-              title="Sair"
+              title="Encerrar Sessão"
             >
               <i className="fas fa-sign-out-alt"></i>
             </button>
