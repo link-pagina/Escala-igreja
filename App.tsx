@@ -24,7 +24,7 @@ const App: React.FC = () => {
   const fetchData = useCallback(async (userId: string) => {
     setLoading(true);
     try {
-      // Busca dados da tabela Equipes (conforme solicitado)
+      // Busca dados da tabela Equipes
       const { data: peopleData, error: peopleError } = await supabase
         .from('Equipes')
         .select('*')
@@ -92,7 +92,7 @@ const App: React.FC = () => {
       if (error) throw error;
     } catch (error) {
       console.error('Erro ao adicionar na tabela Equipes:', error);
-      fetchData(user.id); // Recarrega para garantir consistência
+      fetchData(user.id);
     } finally {
       setSaving(false);
     }
@@ -204,7 +204,7 @@ const App: React.FC = () => {
       )}
 
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 h-20 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
               <i className="fas fa-calendar-check text-2xl"></i>
@@ -245,8 +245,8 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 mt-10">
-        <div className="flex flex-col lg:flex-row gap-8">
+      <main className="max-w-4xl mx-auto px-4 mt-10">
+        <div className="flex flex-col gap-8">
           <div className="flex-1">
             {activeTab === 'equipe' ? (
               <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
@@ -280,43 +280,15 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
-
-          {activeTab === 'escala' && (
-            <aside className="w-full lg:w-72 space-y-6">
-              <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm sticky top-24">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-6 flex items-center gap-2">
-                  <i className="fas fa-database text-blue-500"></i>
-                  Tabela: Equipes
-                </h3>
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                  {people.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-xs text-gray-400 italic">Nenhum voluntário na tabela Equipes.</p>
-                    </div>
-                  ) : (
-                    people.map(person => (
-                      <div key={person.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-transparent hover:border-blue-100 transition-all group">
-                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-[10px] font-black text-white">
-                          {person.name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-sm font-bold text-gray-700 truncate">{person.name}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="mt-6 pt-6 border-t border-gray-50">
-                  <button 
-                    onClick={() => setActiveTab('equipe')}
-                    className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 rounded-xl transition-all border border-blue-50"
-                  >
-                    Gerenciar Tabela
-                  </button>
-                </div>
-              </div>
-            </aside>
-          )}
         </div>
       </main>
+
+      <footer className="max-w-4xl mx-auto px-4 mt-20 text-center">
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-8"></div>
+        <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">
+          Gerenciador de Escala &copy; {currentYear} &bull; v2.2
+        </p>
+      </footer>
     </div>
   );
 };
