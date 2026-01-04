@@ -24,14 +24,16 @@ const App: React.FC = () => {
   const fetchData = useCallback(async (userId: string) => {
     setLoading(true);
     try {
+      // Busca dados da tabela Equipes (conforme solicitado)
       const { data: peopleData, error: peopleError } = await supabase
-        .from('people')
+        .from('Equipes')
         .select('*')
         .eq('user_id', userId)
         .order('name');
       
       if (peopleError) throw peopleError;
 
+      // Busca dados da escala
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
         .select('*')
@@ -42,15 +44,13 @@ const App: React.FC = () => {
       setPeople(peopleData || []);
       setAssignments(assignmentsData || []);
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
-      // Fallback para evitar travamento em tela branca
+      console.error('Erro ao buscar dados do Supabase:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Verificar sessão atual ao montar
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
@@ -65,7 +65,7 @@ const App: React.FC = () => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       
-      if (event === 'SIGNED_IN' && currentUser) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && currentUser) {
         fetchData(currentUser.id);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -84,16 +84,15 @@ const App: React.FC = () => {
     const newId = crypto.randomUUID();
     const newPerson = { id: newId, name, user_id: user.id };
     
-    // Atualização otimista
+    // Atualização otimista da interface
     setPeople(prev => [...prev, newPerson].sort((a, b) => a.name.localeCompare(b.name)));
     
     try {
-      const { error } = await supabase.from('people').insert([newPerson]);
+      const { error } = await supabase.from('Equipes').insert([newPerson]);
       if (error) throw error;
     } catch (error) {
-      console.error('Erro ao adicionar pessoa:', error);
-      // Reverter em caso de erro
-      fetchData(user.id);
+      console.error('Erro ao adicionar na tabela Equipes:', error);
+      fetchData(user.id); // Recarrega para garantir consistência
     } finally {
       setSaving(false);
     }
@@ -103,22 +102,21 @@ const App: React.FC = () => {
     if (!user) return;
     setSaving(true);
     
-    // Atualização otimista
     const oldPeople = [...people];
     setPeople(prev => prev.filter(p => p.id !== id));
     
     try {
-      const { error } = await supabase.from('people').delete().eq('id', id);
+      const { error } = await supabase.from('Equipes').delete().eq('id', id);
       if (error) throw error;
       
-      // Limpar atribuições órfãs localmente
+      // Limpar referências na escala localmente
       setAssignments(prev => prev.map(a => ({
         ...a,
         person1Id: a.person1Id === id ? '' : a.person1Id,
         person2Id: a.person2Id === id ? '' : a.person2Id
       })));
     } catch (error) {
-      console.error('Erro ao remover pessoa:', error);
+      console.error('Erro ao remover da tabela Equipes:', error);
       setPeople(oldPeople);
     } finally {
       setSaving(false);
@@ -174,14 +172,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     setLoading(true);
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Erro ao sair:', error);
-    } finally {
-      setUser(null);
-      setLoading(false);
-    }
+    await supabase.auth.signOut();
   };
 
   if (loading) {
@@ -189,7 +180,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando Banco de Dados...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Conectando ao Supabase...</p>
         </div>
       </div>
     );
@@ -203,12 +194,11 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20 bg-gray-50">
-      {/* Indicador de Salvamento Global */}
       {saving && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in zoom-in duration-300">
-          <div className="bg-blue-600 text-white px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-            <i className="fas fa-circle-notch fa-spin"></i>
-            Salvando no Supabase
+          <div className="bg-green-600 text-white px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+            <i className="fas fa-cloud-upload-alt animate-bounce"></i>
+            Sincronizando Nuvem
           </div>
         </div>
       )}
@@ -221,7 +211,7 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">Escala 2026</h1>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Sincronizado na Nuvem</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Nuvem: Ativa</p>
             </div>
           </div>
 
@@ -241,13 +231,13 @@ const App: React.FC = () => {
               </button>
             </nav>
             <div className="hidden md:flex flex-col items-end">
-              <span className="text-xs text-gray-400">Logado como</span>
+              <span className="text-xs text-gray-400">Olá,</span>
               <span className="text-sm font-black text-gray-700">{userName}</span>
             </div>
             <button 
               onClick={handleLogout}
               className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
-              title="Encerrar Sessão"
+              title="Sair"
             >
               <i className="fas fa-sign-out-alt"></i>
             </button>
@@ -257,7 +247,6 @@ const App: React.FC = () => {
 
       <main className="max-w-6xl mx-auto px-4 mt-10">
         <div className="flex flex-col lg:flex-row gap-8">
-          
           <div className="flex-1">
             {activeTab === 'equipe' ? (
               <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
@@ -270,11 +259,7 @@ const App: React.FC = () => {
                   </button>
                   <div className="text-center z-10">
                     <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter mb-2">{getMonthName(currentMonth)}</h2>
-                    <div className="flex items-center justify-center gap-3">
-                      <div className="h-px w-8 bg-blue-400"></div>
-                      <p className="text-blue-200 font-black tracking-[0.4em] text-sm">{currentYear}</p>
-                      <div className="h-px w-8 bg-blue-400"></div>
-                    </div>
+                    <p className="text-blue-200 font-black tracking-[0.4em] text-sm">{currentYear}</p>
                   </div>
                   <button onClick={() => changeMonth(1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
                     <i className="fas fa-chevron-right text-xl"></i>
@@ -296,25 +281,23 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* Sidebar de Referência da Equipe */}
           {activeTab === 'escala' && (
             <aside className="w-full lg:w-72 space-y-6">
               <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm sticky top-24">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-6 flex items-center gap-2">
-                  <i className="fas fa-users text-blue-500"></i>
-                  Voluntários Cadastrados
+                  <i className="fas fa-database text-blue-500"></i>
+                  Tabela: Equipes
                 </h3>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                   {people.length === 0 ? (
                     <div className="text-center py-8">
-                      <i className="fas fa-user-friends text-gray-200 text-3xl mb-2"></i>
-                      <p className="text-xs text-gray-400 italic">Nenhum membro.</p>
+                      <p className="text-xs text-gray-400 italic">Nenhum voluntário na tabela Equipes.</p>
                     </div>
                   ) : (
                     people.map(person => (
-                      <div key={person.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-transparent hover:border-blue-100 hover:bg-blue-50 transition-all group">
-                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-[10px] font-black text-white shadow-sm group-hover:scale-110 transition-transform">
-                          {person.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                      <div key={person.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-transparent hover:border-blue-100 transition-all group">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-[10px] font-black text-white">
+                          {person.name.charAt(0).toUpperCase()}
                         </div>
                         <span className="text-sm font-bold text-gray-700 truncate">{person.name}</span>
                       </div>
@@ -326,7 +309,7 @@ const App: React.FC = () => {
                     onClick={() => setActiveTab('equipe')}
                     className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 rounded-xl transition-all border border-blue-50"
                   >
-                    Gerenciar Equipe
+                    Gerenciar Tabela
                   </button>
                 </div>
               </div>
@@ -334,13 +317,6 @@ const App: React.FC = () => {
           )}
         </div>
       </main>
-      
-      <footer className="max-w-6xl mx-auto px-4 mt-20 text-center">
-        <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-8"></div>
-        <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">
-          Gerenciador de Escala &copy; {currentYear} &bull; v2.1 (Sincronizado)
-        </p>
-      </footer>
     </div>
   );
 };
