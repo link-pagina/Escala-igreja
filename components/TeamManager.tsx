@@ -19,6 +19,17 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
     }
   };
 
+  const exportToTxt = () => {
+    const text = people.map(p => p.name).join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'equipes.txt';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-8 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -29,10 +40,19 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
             </div>
             Gestão da Equipe
           </h2>
-          <p className="text-sm text-gray-500 mt-1 font-medium">Controle os voluntários que aparecerão nas opções da escala.</p>
+          <p className="text-sm text-gray-500 mt-1 font-medium">Os nomes abaixo aparecem na escala.</p>
         </div>
-        <div className="bg-blue-600 text-white px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-200">
-          {people.length} {people.length === 1 ? 'Membro' : 'Membros'}
+        <div className="flex gap-2">
+           <button
+            onClick={exportToTxt}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2"
+          >
+            <i className="fas fa-file-export"></i>
+            Exportar TXT
+          </button>
+          <div className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 flex items-center">
+            {people.length} Membros
+          </div>
         </div>
       </div>
 
@@ -63,7 +83,7 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Origem</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Nome do Voluntário</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 text-right">Ações</th>
               </tr>
@@ -72,35 +92,34 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
               {people.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center text-gray-200 text-4xl">
-                        <i className="fas fa-user-slash"></i>
-                      </div>
-                      <p className="text-gray-400 italic font-medium">Nenhum membro cadastrado ainda.</p>
-                    </div>
+                    <p className="text-gray-400 italic font-medium">Nenhum membro cadastrado ainda.</p>
                   </td>
                 </tr>
               ) : (
                 people.map((person) => (
                   <tr key={person.id} className="hover:bg-blue-50/30 transition-colors group">
                     <td className="px-6 py-4">
-                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 block shadow-[0_0_8px_rgba(34,197,94,0.4)]"></span>
+                      <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase ${person.id.startsWith('txt-') ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                        {person.id.startsWith('txt-') ? 'Arquivo TXT' : 'Banco de Dados'}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
                       <span className="font-bold text-gray-700 group-hover:text-blue-700 transition-colors">{person.name}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => {
-                          if(confirm(`Deseja realmente remover ${person.name}?`)) {
-                            onRemove(person.id);
-                          }
-                        }}
-                        className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-300 hover:bg-red-50 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
-                        title="Remover"
-                      >
-                        <i className="fas fa-trash-alt"></i>
-                      </button>
+                      {!person.id.startsWith('txt-') && (
+                        <button
+                          onClick={() => {
+                            if(confirm(`Deseja realmente remover ${person.name}?`)) {
+                              onRemove(person.id);
+                            }
+                          }}
+                          className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-300 hover:bg-red-50 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
+                          title="Remover"
+                        >
+                          <i className="fas fa-trash-alt"></i>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

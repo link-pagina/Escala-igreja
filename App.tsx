@@ -21,33 +21,57 @@ const App: React.FC = () => {
   const currentMonth = viewDate.getMonth();
   const currentYear = viewDate.getFullYear();
 
-  // Verifica se o usuário logado é o administrador pelo UID para mostrar a aba Equipe
   const isAuthorized = useMemo(() => user?.id === ADMIN_UID, [user]);
-
   const shiftDays = useMemo(() => getDaysForScale(currentYear, currentMonth), [currentYear, currentMonth]);
+
+  // Função para carregar nomes do arquivo TXT
+  const loadFromTxt = async () => {
+    try {
+      const response = await fetch('/equipes.txt');
+      if (response.ok) {
+        const text = await response.text();
+        const names = text.split('\n').map(n => n.trim()).filter(n => n !== '');
+        return names.map(name => ({ id: `txt-${name}`, name }));
+      }
+    } catch (error) {
+      console.error('Erro ao ler equipes.txt:', error);
+    }
+    return [];
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Faz o SELECT na tabela 'equipes' para preencher os nomes disponíveis
-      const { data: peopleData, error: peopleError } = await supabase
+      // 1. Carrega do TXT
+      const txtPeople = await loadFromTxt();
+
+      // 2. Faz o SELECT na tabela 'equipes' do Supabase
+      const { data: dbPeople, error: peopleError } = await supabase
         .from('equipes')
         .select('*')
         .order('name');
       
       if (peopleError) throw peopleError;
 
-      // 2. Busca os dados da escala (assignments)
+      // 3. Mescla as listas (priorizando nomes do banco para evitar duplicatas visuais)
+      const combinedPeople = [...txtPeople];
+      (dbPeople || []).forEach(p => {
+        if (!combinedPeople.some(cp => cp.name === p.name)) {
+          combinedPeople.push(p);
+        }
+      });
+
+      // 4. Busca os dados da escala
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
         .select('*');
 
       if (assignmentsError) throw assignmentsError;
 
-      setPeople(peopleData || []);
+      setPeople(combinedPeople.sort((a, b) => a.name.localeCompare(b.name)));
       setAssignments(assignmentsData || []);
     } catch (err) {
-      console.error('Erro ao buscar dados do Supabase:', err);
+      console.error('Erro ao buscar dados:', err);
     } finally {
       setLoading(false);
     }
@@ -57,20 +81,15 @@ const App: React.FC = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) {
-        fetchData();
-      } else {
-        setLoading(false);
-      }
+      if (currentUser) fetchData();
+      else setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && currentUser) {
-        fetchData();
-      } else if (event === 'SIGNED_OUT') {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && currentUser) fetchData();
+      else if (event === 'SIGNED_OUT') {
         setUser(null);
         setPeople([]);
         setAssignments([]);
@@ -84,23 +103,18 @@ const App: React.FC = () => {
   const addPerson = async (name: string) => {
     if (!user || !isAuthorized) return;
     setSaving(true);
-    
     try {
-      // 3. Usa o INSERT do Supabase para salvar na tabela 'equipes'
       const { data, error } = await supabase
         .from('equipes')
         .insert([{ name, user_id: user.id }])
         .select();
       
       if (error) throw error;
-      
-      // Atualiza o estado local com o novo registro vindo do banco para refletir na interface
       if (data && data[0]) {
         setPeople(prev => [...prev, data[0]].sort((a, b) => a.name.localeCompare(b.name)));
       }
     } catch (error) {
       console.error('Erro ao adicionar na tabela equipes:', error);
-      alert('Erro ao salvar novo voluntário no banco de dados.');
     } finally {
       setSaving(false);
     }
@@ -108,23 +122,17 @@ const App: React.FC = () => {
 
   const removePerson = async (id: string) => {
     if (!user || !isAuthorized) return;
+    if (id.startsWith('txt-')) {
+      alert('Nomes vindos do arquivo equipes.txt não podem ser excluídos pelo sistema. Edite o arquivo diretamente.');
+      return;
+    }
     setSaving(true);
-    
-    const oldPeople = [...people];
-    setPeople(prev => prev.filter(p => p.id !== id));
-    
     try {
       const { error } = await supabase.from('equipes').delete().eq('id', id);
       if (error) throw error;
-      
-      setAssignments(prev => prev.map(a => ({
-        ...a,
-        person1Id: a.person1Id === id ? '' : a.person1Id,
-        person2Id: a.person2Id === id ? '' : a.person2Id
-      })));
+      setPeople(prev => prev.filter(p => p.id !== id));
     } catch (error) {
       console.error('Erro ao remover da tabela equipes:', error);
-      setPeople(oldPeople);
     } finally {
       setSaving(false);
     }
@@ -134,6 +142,10 @@ const App: React.FC = () => {
     if (!user) return;
     setSaving(true);
     
+    // Encontrar o nome da pessoa para salvar o valor selecionado
+    const person = people.find(p => p.id === personId);
+    const personValue = person ? person.name : '';
+
     const existingAssign = assignments.find(a => a.date === date && a.period === period);
     const updatedAssignments = [...assignments];
     let upsertData: any;
@@ -187,15 +199,13 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Conectando ao Supabase...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Carregando Dados...</p>
         </div>
       </div>
     );
   }
 
-  if (!user) {
-    return <Login onLoginSuccess={() => setLoading(true)} />;
-  }
+  if (!user) return <Login onLoginSuccess={() => setLoading(true)} />;
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0];
 
@@ -204,8 +214,8 @@ const App: React.FC = () => {
       {saving && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in zoom-in duration-300">
           <div className="bg-green-600 text-white px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-            <i className="fas fa-cloud-upload-alt animate-bounce"></i>
-            Sincronizando Nuvem
+            <i className="fas fa-save animate-pulse"></i>
+            Salvando Alterações
           </div>
         </div>
       )}
@@ -218,7 +228,7 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">Escala 2026</h1>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Nuvem: Ativa</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Equipe: {people.length} membros</p>
             </div>
           </div>
 
@@ -239,13 +249,9 @@ const App: React.FC = () => {
                 </button>
               )}
             </nav>
-            <div className="hidden md:flex flex-col items-end">
-              <span className="text-xs text-gray-400">Olá,</span>
-              <span className="text-sm font-black text-gray-700">{userName}</span>
-            </div>
             <button 
               onClick={handleLogout}
-              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all border border-transparent hover:border-red-100"
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all"
               title="Sair"
             >
               <i className="fas fa-sign-out-alt"></i>
@@ -255,47 +261,47 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 mt-10">
-        <div className="flex flex-col gap-8">
-          <div className="flex-1">
-            {activeTab === 'equipe' && isAuthorized ? (
-              <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
-            ) : (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-8 rounded-[40px] shadow-2xl mb-12 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700"></div>
-                  <button onClick={() => changeMonth(-1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
-                    <i className="fas fa-chevron-left text-xl"></i>
-                  </button>
-                  <div className="text-center z-10">
-                    <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter mb-2">{getMonthName(currentMonth)}</h2>
-                    <p className="text-blue-200 font-black tracking-[0.4em] text-sm">{currentYear}</p>
-                  </div>
-                  <button onClick={() => changeMonth(1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
-                    <i className="fas fa-chevron-right text-xl"></i>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                  {shiftDays.map((day, idx) => (
-                    <ShiftCard
-                      key={`${day.date.getTime()}-${idx}`}
-                      day={day}
-                      people={people}
-                      assignments={assignments}
-                      onAssign={handleAssign}
-                    />
-                  ))}
-                </div>
+        {activeTab === 'equipe' && isAuthorized ? (
+          <TeamManager 
+            people={people} 
+            onAdd={addPerson} 
+            onRemove={removePerson} 
+          />
+        ) : (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-8 rounded-[40px] shadow-2xl mb-12 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700"></div>
+              <button onClick={() => changeMonth(-1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
+                <i className="fas fa-chevron-left text-xl"></i>
+              </button>
+              <div className="text-center z-10">
+                <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter mb-2">{getMonthName(currentMonth)}</h2>
+                <p className="text-blue-200 font-black tracking-[0.4em] text-sm">{currentYear}</p>
               </div>
-            )}
+              <button onClick={() => changeMonth(1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
+                <i className="fas fa-chevron-right text-xl"></i>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
+              {shiftDays.map((day, idx) => (
+                <ShiftCard
+                  key={`${day.date.getTime()}-${idx}`}
+                  day={day}
+                  people={people}
+                  assignments={assignments}
+                  onAssign={handleAssign}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
       <footer className="max-w-4xl mx-auto px-4 mt-20 text-center">
         <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-8"></div>
         <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">
-          Gerenciador de Escala &copy; {currentYear} &bull; v2.2
+          Gerenciador de Escala &copy; {currentYear} &bull; v2.5
         </p>
       </footer>
     </div>
