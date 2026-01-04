@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [activeTab, setActiveTab] = useState<'escala' | 'equipe'>('escala');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [viewDate, setViewDate] = useState(new Date(2026, 0, 1));
 
   const currentMonth = viewDate.getMonth();
@@ -23,31 +24,51 @@ const App: React.FC = () => {
   const fetchData = useCallback(async (userId: string) => {
     setLoading(true);
     try {
-      const [peopleRes, assignmentsRes] = await Promise.all([
-        supabase.from('people').select('*').eq('user_id', userId).order('name'),
-        supabase.from('assignments').select('*').eq('user_id', userId)
-      ]);
+      const { data: peopleData, error: peopleError } = await supabase
+        .from('people')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name');
       
-      if (peopleRes.error) throw peopleRes.error;
-      if (assignmentsRes.error) throw assignmentsRes.error;
+      if (peopleError) throw peopleError;
 
-      setPeople(peopleRes.data || []);
-      setAssignments(assignmentsRes.data || []);
+      const { data: assignmentsData, error: assignmentsError } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (assignmentsError) throw assignmentsError;
+
+      setPeople(peopleData || []);
+      setAssignments(assignmentsData || []);
     } catch (err) {
-      console.error('Erro ao buscar dados do Supabase:', err);
+      console.error('Erro ao buscar dados:', err);
+      // Fallback para evitar travamento em tela branca
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // Verificar sessão atual ao montar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchData(currentUser.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       
-      if (currentUser) {
+      if (event === 'SIGNED_IN' && currentUser) {
         fetchData(currentUser.id);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
         setPeople([]);
         setAssignments([]);
         setLoading(false);
@@ -59,28 +80,55 @@ const App: React.FC = () => {
 
   const addPerson = async (name: string) => {
     if (!user) return;
+    setSaving(true);
     const newId = crypto.randomUUID();
     const newPerson = { id: newId, name, user_id: user.id };
-    setPeople(prev => [...prev, newPerson]);
-    const { error } = await supabase.from('people').insert([newPerson]);
-    if (error) {
-      console.error('Erro ao salvar pessoa:', error);
+    
+    // Atualização otimista
+    setPeople(prev => [...prev, newPerson].sort((a, b) => a.name.localeCompare(b.name)));
+    
+    try {
+      const { error } = await supabase.from('people').insert([newPerson]);
+      if (error) throw error;
+    } catch (error) {
+      console.error('Erro ao adicionar pessoa:', error);
+      // Reverter em caso de erro
       fetchData(user.id);
+    } finally {
+      setSaving(false);
     }
   };
 
   const removePerson = async (id: string) => {
     if (!user) return;
+    setSaving(true);
+    
+    // Atualização otimista
+    const oldPeople = [...people];
     setPeople(prev => prev.filter(p => p.id !== id));
-    const { error } = await supabase.from('people').delete().eq('id', id);
-    if (error) {
-      console.error('Erro ao remover do banco:', error);
-      fetchData(user.id);
+    
+    try {
+      const { error } = await supabase.from('people').delete().eq('id', id);
+      if (error) throw error;
+      
+      // Limpar atribuições órfãs localmente
+      setAssignments(prev => prev.map(a => ({
+        ...a,
+        person1Id: a.person1Id === id ? '' : a.person1Id,
+        person2Id: a.person2Id === id ? '' : a.person2Id
+      })));
+    } catch (error) {
+      console.error('Erro ao remover pessoa:', error);
+      setPeople(oldPeople);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleAssign = async (date: string, period: Period, slot: 1 | 2, personId: string) => {
     if (!user) return;
+    setSaving(true);
+    
     const existingAssign = assignments.find(a => a.date === date && a.period === period);
     const updatedAssignments = [...assignments];
     let upsertData: any;
@@ -105,10 +153,18 @@ const App: React.FC = () => {
     }
 
     setAssignments(updatedAssignments);
-    const { error } = await supabase.from('assignments').upsert(upsertData, { onConflict: 'user_id,date,period' });
-    if (error) {
+    
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .upsert(upsertData, { onConflict: 'user_id,date,period' });
+      
+      if (error) throw error;
+    } catch (error) {
       console.error('Erro ao salvar escala:', error);
       fetchData(user.id);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -118,7 +174,14 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     setLoading(true);
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+    } finally {
+      setUser(null);
+      setLoading(false);
+    }
   };
 
   if (loading) {
@@ -126,7 +189,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando Dados...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando Banco de Dados...</p>
         </div>
       </div>
     );
@@ -140,6 +203,16 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20 bg-gray-50">
+      {/* Indicador de Salvamento Global */}
+      {saving && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in zoom-in duration-300">
+          <div className="bg-blue-600 text-white px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+            <i className="fas fa-circle-notch fa-spin"></i>
+            Salvando no Supabase
+          </div>
+        </div>
+      )}
+
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -223,22 +296,25 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* Sidebar de Referência da Equipe (Exibida na Escala) */}
+          {/* Sidebar de Referência da Equipe */}
           {activeTab === 'escala' && (
             <aside className="w-full lg:w-72 space-y-6">
               <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm sticky top-24">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-6 flex items-center gap-2">
                   <i className="fas fa-users text-blue-500"></i>
-                  Equipe Disponível
+                  Voluntários Cadastrados
                 </h3>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                   {people.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">Nenhum membro cadastrado.</p>
+                    <div className="text-center py-8">
+                      <i className="fas fa-user-friends text-gray-200 text-3xl mb-2"></i>
+                      <p className="text-xs text-gray-400 italic">Nenhum membro.</p>
+                    </div>
                   ) : (
                     people.map(person => (
-                      <div key={person.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-transparent hover:border-blue-100 hover:bg-blue-50 transition-all">
-                        <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-xs font-bold text-blue-600 shadow-sm">
-                          {person.name.charAt(0)}
+                      <div key={person.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-transparent hover:border-blue-100 hover:bg-blue-50 transition-all group">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-[10px] font-black text-white shadow-sm group-hover:scale-110 transition-transform">
+                          {person.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
                         </div>
                         <span className="text-sm font-bold text-gray-700 truncate">{person.name}</span>
                       </div>
@@ -248,9 +324,9 @@ const App: React.FC = () => {
                 <div className="mt-6 pt-6 border-t border-gray-50">
                   <button 
                     onClick={() => setActiveTab('equipe')}
-                    className="w-full py-3 text-xs font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                    className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 rounded-xl transition-all border border-blue-50"
                   >
-                    Editar Equipe
+                    Gerenciar Equipe
                   </button>
                 </div>
               </div>
@@ -262,7 +338,7 @@ const App: React.FC = () => {
       <footer className="max-w-6xl mx-auto px-4 mt-20 text-center">
         <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-8"></div>
         <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">
-          Controle de Escala &copy; {currentYear} &bull; v2.0
+          Gerenciador de Escala &copy; {currentYear} &bull; v2.1 (Sincronizado)
         </p>
       </footer>
     </div>
