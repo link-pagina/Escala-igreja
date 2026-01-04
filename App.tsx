@@ -21,22 +21,23 @@ const App: React.FC = () => {
   const currentMonth = viewDate.getMonth();
   const currentYear = viewDate.getFullYear();
 
+  // Verifica se o usuário logado é o administrador pelo UID para mostrar a aba Equipe
   const isAuthorized = useMemo(() => user?.id === ADMIN_UID, [user]);
 
   const shiftDays = useMemo(() => getDaysForScale(currentYear, currentMonth), [currentYear, currentMonth]);
 
-  const fetchData = useCallback(async (userId: string) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Busca dados da tabela Equipes
+      // 1. Faz o SELECT na tabela 'equipes' para preencher os nomes disponíveis
       const { data: peopleData, error: peopleError } = await supabase
-        .from('Equipes')
+        .from('equipes')
         .select('*')
         .order('name');
       
       if (peopleError) throw peopleError;
 
-      // Busca dados da escala
+      // 2. Busca os dados da escala (assignments)
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
         .select('*');
@@ -57,7 +58,7 @@ const App: React.FC = () => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchData(currentUser.id);
+        fetchData();
       } else {
         setLoading(false);
       }
@@ -68,7 +69,7 @@ const App: React.FC = () => {
       setUser(currentUser);
       
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && currentUser) {
-        fetchData(currentUser.id);
+        fetchData();
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setPeople([]);
@@ -83,17 +84,23 @@ const App: React.FC = () => {
   const addPerson = async (name: string) => {
     if (!user || !isAuthorized) return;
     setSaving(true);
-    const newId = crypto.randomUUID();
-    const newPerson = { id: newId, name, user_id: user.id };
-    
-    setPeople(prev => [...prev, newPerson].sort((a, b) => a.name.localeCompare(b.name)));
     
     try {
-      const { error } = await supabase.from('Equipes').insert([newPerson]);
+      // 3. Usa o INSERT do Supabase para salvar na tabela 'equipes'
+      const { data, error } = await supabase
+        .from('equipes')
+        .insert([{ name, user_id: user.id }])
+        .select();
+      
       if (error) throw error;
+      
+      // Atualiza o estado local com o novo registro vindo do banco para refletir na interface
+      if (data && data[0]) {
+        setPeople(prev => [...prev, data[0]].sort((a, b) => a.name.localeCompare(b.name)));
+      }
     } catch (error) {
-      console.error('Erro ao adicionar na tabela Equipes:', error);
-      fetchData(user.id);
+      console.error('Erro ao adicionar na tabela equipes:', error);
+      alert('Erro ao salvar novo voluntário no banco de dados.');
     } finally {
       setSaving(false);
     }
@@ -107,7 +114,7 @@ const App: React.FC = () => {
     setPeople(prev => prev.filter(p => p.id !== id));
     
     try {
-      const { error } = await supabase.from('Equipes').delete().eq('id', id);
+      const { error } = await supabase.from('equipes').delete().eq('id', id);
       if (error) throw error;
       
       setAssignments(prev => prev.map(a => ({
@@ -116,7 +123,7 @@ const App: React.FC = () => {
         person2Id: a.person2Id === id ? '' : a.person2Id
       })));
     } catch (error) {
-      console.error('Erro ao remover da tabela Equipes:', error);
+      console.error('Erro ao remover da tabela equipes:', error);
       setPeople(oldPeople);
     } finally {
       setSaving(false);
@@ -160,7 +167,7 @@ const App: React.FC = () => {
       if (error) throw error;
     } catch (error) {
       console.error('Erro ao salvar escala:', error);
-      fetchData(user.id);
+      fetchData();
     } finally {
       setSaving(false);
     }
