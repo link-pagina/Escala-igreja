@@ -126,7 +126,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Sincronizando Dados...</p>
         </div>
       </div>
     );
@@ -139,12 +139,12 @@ const App: React.FC = () => {
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0];
 
   return (
-    <div className="min-h-screen pb-12 bg-gray-50">
+    <div className="min-h-screen pb-20 bg-gray-50">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 h-20 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-              <i className="fas fa-calendar-check text-xl sm:text-2xl"></i>
+            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+              <i className="fas fa-calendar-check text-2xl"></i>
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">Escala 2026</h1>
@@ -156,20 +156,20 @@ const App: React.FC = () => {
             <nav className="flex gap-1 p-1 bg-gray-100 rounded-lg">
               <button
                 onClick={() => setActiveTab('escala')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'escala' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+                className={`px-5 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'escala' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
               >
                 Escala
               </button>
               <button
                 onClick={() => setActiveTab('equipe')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'equipe' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+                className={`px-5 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'equipe' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
               >
                 Equipe
               </button>
             </nav>
             <div className="hidden md:flex flex-col items-end">
-              <span className="text-xs text-gray-400">Olá,</span>
-              <span className="text-sm font-semibold text-gray-700">{userName}</span>
+              <span className="text-xs text-gray-400">Logado como</span>
+              <span className="text-sm font-black text-gray-700">{userName}</span>
             </div>
             <button 
               onClick={handleLogout}
@@ -182,37 +182,89 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 mt-6 sm:mt-10">
-        {activeTab === 'equipe' ? (
-          <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
-        ) : (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-6 rounded-3xl shadow-2xl mb-10">
-              <button onClick={() => changeMonth(-1)} className="w-14 h-14 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/30 transition-all active:scale-90">
-                <i className="fas fa-arrow-left text-xl"></i>
-              </button>
-              <div className="text-center">
-                <h2 className="text-3xl sm:text-4xl font-black uppercase tracking-tighter">{getMonthName(currentMonth)}</h2>
-                <p className="text-blue-200 font-black tracking-[0.3em] text-sm mt-1">{currentYear}</p>
+      <main className="max-w-6xl mx-auto px-4 mt-10">
+        <div className="flex flex-col lg:flex-row gap-8">
+          
+          <div className="flex-1">
+            {activeTab === 'equipe' ? (
+              <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
+            ) : (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-8 rounded-[40px] shadow-2xl mb-12 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700"></div>
+                  <button onClick={() => changeMonth(-1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
+                    <i className="fas fa-chevron-left text-xl"></i>
+                  </button>
+                  <div className="text-center z-10">
+                    <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter mb-2">{getMonthName(currentMonth)}</h2>
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="h-px w-8 bg-blue-400"></div>
+                      <p className="text-blue-200 font-black tracking-[0.4em] text-sm">{currentYear}</p>
+                      <div className="h-px w-8 bg-blue-400"></div>
+                    </div>
+                  </div>
+                  <button onClick={() => changeMonth(1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
+                    <i className="fas fa-chevron-right text-xl"></i>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                  {shiftDays.map((day, idx) => (
+                    <ShiftCard
+                      key={`${day.date.getTime()}-${idx}`}
+                      day={day}
+                      people={people}
+                      assignments={assignments}
+                      onAssign={handleAssign}
+                    />
+                  ))}
+                </div>
               </div>
-              <button onClick={() => changeMonth(1)} className="w-14 h-14 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/30 transition-all active:scale-90">
-                <i className="fas fa-arrow-right text-xl"></i>
-              </button>
-            </div>
-            <div className="grid grid-cols-1 gap-6">
-              {shiftDays.map((day, idx) => (
-                <ShiftCard
-                  key={`${day.date.getTime()}-${idx}`}
-                  day={day}
-                  people={people}
-                  assignments={assignments}
-                  onAssign={handleAssign}
-                />
-              ))}
-            </div>
+            )}
           </div>
-        )}
+
+          {/* Sidebar de Referência da Equipe (Exibida na Escala) */}
+          {activeTab === 'escala' && (
+            <aside className="w-full lg:w-72 space-y-6">
+              <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm sticky top-24">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-6 flex items-center gap-2">
+                  <i className="fas fa-users text-blue-500"></i>
+                  Equipe Disponível
+                </h3>
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                  {people.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">Nenhum membro cadastrado.</p>
+                  ) : (
+                    people.map(person => (
+                      <div key={person.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-transparent hover:border-blue-100 hover:bg-blue-50 transition-all">
+                        <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-xs font-bold text-blue-600 shadow-sm">
+                          {person.name.charAt(0)}
+                        </div>
+                        <span className="text-sm font-bold text-gray-700 truncate">{person.name}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="mt-6 pt-6 border-t border-gray-50">
+                  <button 
+                    onClick={() => setActiveTab('equipe')}
+                    className="w-full py-3 text-xs font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                  >
+                    Editar Equipe
+                  </button>
+                </div>
+              </div>
+            </aside>
+          )}
+        </div>
       </main>
+      
+      <footer className="max-w-6xl mx-auto px-4 mt-20 text-center">
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-8"></div>
+        <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">
+          Controle de Escala &copy; {currentYear} &bull; v2.0
+        </p>
+      </footer>
     </div>
   );
 };
