@@ -7,6 +7,8 @@ import ShiftCard from './components/ShiftCard';
 import Login from './components/Login';
 import { supabase } from './lib/supabase';
 
+const ADMIN_UID = '017f9ffa-525e-49f5-bb91-0606963f9bb3';
+
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -19,6 +21,8 @@ const App: React.FC = () => {
   const currentMonth = viewDate.getMonth();
   const currentYear = viewDate.getFullYear();
 
+  const isAuthorized = useMemo(() => user?.id === ADMIN_UID, [user]);
+
   const shiftDays = useMemo(() => getDaysForScale(currentYear, currentMonth), [currentYear, currentMonth]);
 
   const fetchData = useCallback(async (userId: string) => {
@@ -28,7 +32,6 @@ const App: React.FC = () => {
       const { data: peopleData, error: peopleError } = await supabase
         .from('Equipes')
         .select('*')
-        .eq('user_id', userId)
         .order('name');
       
       if (peopleError) throw peopleError;
@@ -36,8 +39,7 @@ const App: React.FC = () => {
       // Busca dados da escala
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
-        .select('*')
-        .eq('user_id', userId);
+        .select('*');
 
       if (assignmentsError) throw assignmentsError;
 
@@ -79,12 +81,11 @@ const App: React.FC = () => {
   }, [fetchData]);
 
   const addPerson = async (name: string) => {
-    if (!user) return;
+    if (!user || !isAuthorized) return;
     setSaving(true);
     const newId = crypto.randomUUID();
     const newPerson = { id: newId, name, user_id: user.id };
     
-    // Atualização otimista da interface
     setPeople(prev => [...prev, newPerson].sort((a, b) => a.name.localeCompare(b.name)));
     
     try {
@@ -99,7 +100,7 @@ const App: React.FC = () => {
   };
 
   const removePerson = async (id: string) => {
-    if (!user) return;
+    if (!user || !isAuthorized) return;
     setSaving(true);
     
     const oldPeople = [...people];
@@ -109,7 +110,6 @@ const App: React.FC = () => {
       const { error } = await supabase.from('Equipes').delete().eq('id', id);
       if (error) throw error;
       
-      // Limpar referências na escala localmente
       setAssignments(prev => prev.map(a => ({
         ...a,
         person1Id: a.person1Id === id ? '' : a.person1Id,
@@ -223,12 +223,14 @@ const App: React.FC = () => {
               >
                 Escala
               </button>
-              <button
-                onClick={() => setActiveTab('equipe')}
-                className={`px-5 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'equipe' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
-              >
-                Equipe
-              </button>
+              {isAuthorized && (
+                <button
+                  onClick={() => setActiveTab('equipe')}
+                  className={`px-5 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'equipe' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+                >
+                  Equipe
+                </button>
+              )}
             </nav>
             <div className="hidden md:flex flex-col items-end">
               <span className="text-xs text-gray-400">Olá,</span>
@@ -248,7 +250,7 @@ const App: React.FC = () => {
       <main className="max-w-4xl mx-auto px-4 mt-10">
         <div className="flex flex-col gap-8">
           <div className="flex-1">
-            {activeTab === 'equipe' ? (
+            {activeTab === 'equipe' && isAuthorized ? (
               <TeamManager people={people} onAdd={addPerson} onRemove={removePerson} />
             ) : (
               <div className="space-y-6">
