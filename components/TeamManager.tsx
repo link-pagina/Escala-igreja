@@ -6,10 +6,12 @@ interface TeamManagerProps {
   people: Person[];
   onAdd: (name: string) => void;
   onRemove: (id: string) => void;
+  onRefresh: () => Promise<void>;
 }
 
-const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) => {
+const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove, onRefresh }) => {
   const [newName, setNewName] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,6 +19,12 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
       onAdd(newName.trim());
       setNewName('');
     }
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await onRefresh();
+    setIsRefreshing(false);
   };
 
   return (
@@ -29,10 +37,24 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
             </div>
             Gestão da Equipe
           </h2>
-          <p className="text-sm text-gray-500 mt-1 font-medium">Os nomes são salvos diretamente no banco de dados.</p>
+          <p className="text-sm text-gray-500 mt-1 font-medium">Controle de acesso exclusivo para administradores.</p>
         </div>
-        <div className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200">
-          {people.length} Membros
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+              isRefreshing 
+                ? 'bg-gray-100 text-gray-400' 
+                : 'bg-white text-blue-600 border border-blue-100 hover:bg-blue-50 shadow-sm active:scale-95'
+            }`}
+          >
+            <i className={`fas fa-sync-alt ${isRefreshing ? 'animate-spin' : ''}`}></i>
+            Recarregar Lista
+          </button>
+          <div className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100">
+            {people.length} Membros
+          </div>
         </div>
       </div>
 
@@ -68,7 +90,14 @@ const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) =>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {people.length === 0 ? (
+              {isRefreshing ? (
+                <tr>
+                  <td colSpan={2} className="px-6 py-20 text-center">
+                    <i className="fas fa-circle-notch fa-spin text-blue-600 text-2xl mb-4"></i>
+                    <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">Buscando nomes no Supabase...</p>
+                  </td>
+                </tr>
+              ) : people.length === 0 ? (
                 <tr>
                   <td colSpan={2} className="px-6 py-20 text-center">
                     <p className="text-gray-400 italic font-medium">Nenhum membro cadastrado.</p>

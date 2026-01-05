@@ -7,51 +7,34 @@ interface PeriodRowProps {
   period: Period;
   dateKey: string;
   people: Person[];
-  data: { person1Name: string; person2Name: string };
+  data: { person1_name: string; person2_name: string };
   onAssign: (date: string, period: Period, slot: 1 | 2, personName: string) => void;
 }
 
 const PeriodRow: React.FC<PeriodRowProps> = ({ period, dateKey, people, data, onAssign }) => {
-  // Garante que o nome selecionado apareça mesmo se não estiver na lista atual de equipe (histórico)
-  const renderOptions = () => {
-    const options = people.map(p => (
-      <option key={p.id} value={p.name}>
-        {p.name}
-      </option>
-    ));
-
-    // Se houver um nome salvo que não está na lista, adiciona ele como opção temporária para exibição
-    if (data.person1Name && !people.some(p => p.name === data.person1Name)) {
-      // Apenas lógica visual para o select não ficar vazio
-    }
-
-    return options;
-  };
-
   return (
     <div className="flex flex-col sm:flex-row items-center gap-4 py-3 first:pt-0 last:pb-0 border-b last:border-0 border-gray-100">
       <div className="w-24 font-bold text-gray-700 text-center sm:text-left">{period}</div>
       <div className="flex flex-col sm:flex-row gap-3 flex-1 w-full">
         <select
-          value={data.person1Name}
+          value={data.person1_name}
           onChange={(e) => onAssign(dateKey, period, 1, e.target.value)}
           className="flex-1 bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-2 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
         >
           <option value="">- Escolha -</option>
-          {/* Se o nome atual não estiver na lista de pessoas, criamos uma option para ele não sumir da tela */}
-          {data.person1Name && !people.some(p => p.name === data.person1Name) && (
-            <option value={data.person1Name}>{data.person1Name} (Removido)</option>
+          {data.person1_name && !people.some(p => p.name === data.person1_name) && (
+            <option value={data.person1_name}>{data.person1_name} (Histórico)</option>
           )}
           {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
         </select>
         <select
-          value={data.person2Name}
+          value={data.person2_name}
           onChange={(e) => onAssign(dateKey, period, 2, e.target.value)}
           className="flex-1 bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-2 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
         >
           <option value="">- Escolha -</option>
-          {data.person2Name && !people.some(p => p.name === data.person2Name) && (
-            <option value={data.person2Name}>{data.person2Name} (Removido)</option>
+          {data.person2_name && !people.some(p => p.name === data.person2_name) && (
+            <option value={data.person2_name}>{data.person2_name} (Histórico)</option>
           )}
           {people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
         </select>
@@ -77,8 +60,8 @@ const ShiftCard: React.FC<ShiftCardProps> = ({ day, people, assignments, onAssig
   const getAssignmentData = (period: Period) => {
     const found = assignments.find(a => a.date === dateKey && a.period === period);
     return {
-      person1Name: found?.person1Name || '',
-      person2Name: found?.person2Name || ''
+      person1_name: found?.person1_name || '',
+      person2_name: found?.person2_name || ''
     };
   };
 
