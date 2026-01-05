@@ -24,28 +24,10 @@ const App: React.FC = () => {
   const isAuthorized = useMemo(() => user?.id === ADMIN_UID, [user]);
   const shiftDays = useMemo(() => getDaysForScale(currentYear, currentMonth), [currentYear, currentMonth]);
 
-  // Função para carregar nomes do arquivo TXT
-  const loadFromTxt = async () => {
-    try {
-      const response = await fetch('/equipes.txt');
-      if (response.ok) {
-        const text = await response.text();
-        const names = text.split('\n').map(n => n.trim()).filter(n => n !== '');
-        return names.map(name => ({ id: `txt-${name}`, name }));
-      }
-    } catch (error) {
-      console.error('Erro ao ler equipes.txt:', error);
-    }
-    return [];
-  };
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Carrega do TXT
-      const txtPeople = await loadFromTxt();
-
-      // 2. Faz o SELECT na tabela 'equipes' do Supabase
+      // Busca membros da equipe
       const { data: dbPeople, error: peopleError } = await supabase
         .from('equipes')
         .select('*')
@@ -53,25 +35,19 @@ const App: React.FC = () => {
       
       if (peopleError) throw peopleError;
 
-      // 3. Mescla as listas (priorizando nomes do banco para evitar duplicatas visuais)
-      const combinedPeople = [...txtPeople];
-      (dbPeople || []).forEach(p => {
-        if (!combinedPeople.some(cp => cp.name === p.name)) {
-          combinedPeople.push(p);
-        }
-      });
-
-      // 4. Busca os dados da escala
+      // Busca atribuições da escala
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from('assignments')
         .select('*');
 
       if (assignmentsError) throw assignmentsError;
 
-      setPeople(combinedPeople.sort((a, b) => a.name.localeCompare(b.name)));
+      setPeople(dbPeople || []);
       setAssignments(assignmentsData || []);
-    } catch (err) {
-      console.error('Erro ao buscar dados:', err);
+    } catch (err: any) {
+      const errorMsg = err.message || JSON.stringify(err);
+      console.error('Erro ao buscar dados:', errorMsg);
+      alert('Erro ao carregar dados: ' + errorMsg);
     } finally {
       setLoading(false);
     }
@@ -110,11 +86,14 @@ const App: React.FC = () => {
         .select();
       
       if (error) throw error;
+      
       if (data && data[0]) {
         setPeople(prev => [...prev, data[0]].sort((a, b) => a.name.localeCompare(b.name)));
       }
-    } catch (error) {
-      console.error('Erro ao adicionar na tabela equipes:', error);
+    } catch (err: any) {
+      const errorMsg = err.message || JSON.stringify(err);
+      console.error('Erro ao adicionar na tabela equipes:', errorMsg);
+      alert('Erro ao cadastrar pessoa: ' + errorMsg);
     } finally {
       setSaving(false);
     }
@@ -122,38 +101,37 @@ const App: React.FC = () => {
 
   const removePerson = async (id: string) => {
     if (!user || !isAuthorized) return;
-    if (id.startsWith('txt-')) {
-      alert('Nomes vindos do arquivo equipes.txt não podem ser excluídos pelo sistema. Edite o arquivo diretamente.');
-      return;
-    }
     setSaving(true);
     try {
-      const { error } = await supabase.from('equipes').delete().eq('id', id);
+      const { error } = await supabase
+        .from('equipes')
+        .delete()
+        .eq('id', id);
+      
       if (error) throw error;
+      
       setPeople(prev => prev.filter(p => p.id !== id));
-    } catch (error) {
-      console.error('Erro ao remover da tabela equipes:', error);
+    } catch (err: any) {
+      const errorMsg = err.message || JSON.stringify(err);
+      console.error('Erro ao remover pessoa:', errorMsg);
+      alert('Erro ao remover: ' + errorMsg);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleAssign = async (date: string, period: Period, slot: 1 | 2, personId: string) => {
+  const handleAssign = async (date: string, period: Period, slot: 1 | 2, personName: string) => {
     if (!user) return;
     setSaving(true);
     
-    // Encontrar o nome da pessoa para salvar o valor selecionado
-    const person = people.find(p => p.id === personId);
-    const personValue = person ? person.name : '';
-
     const existingAssign = assignments.find(a => a.date === date && a.period === period);
     const updatedAssignments = [...assignments];
     let upsertData: any;
 
     if (existingAssign) {
       const updatedItem = { ...existingAssign };
-      if (slot === 1) updatedItem.person1Id = personId;
-      else updatedItem.person2Id = personId;
+      if (slot === 1) updatedItem.person1Name = personName;
+      else updatedItem.person2Name = personName;
       upsertData = { ...updatedItem, user_id: user.id };
       const idx = updatedAssignments.findIndex(a => a.date === date && a.period === period);
       updatedAssignments[idx] = updatedItem;
@@ -161,8 +139,8 @@ const App: React.FC = () => {
       const newItem: Assignment = {
         date,
         period,
-        person1Id: slot === 1 ? personId : '',
-        person2Id: slot === 2 ? personId : '',
+        person1Name: slot === 1 ? personName : '',
+        person2Name: slot === 2 ? personName : '',
         user_id: user.id
       };
       upsertData = newItem;
@@ -177,9 +155,10 @@ const App: React.FC = () => {
         .upsert(upsertData, { onConflict: 'user_id,date,period' });
       
       if (error) throw error;
-    } catch (error) {
-      console.error('Erro ao salvar escala:', error);
-      fetchData();
+    } catch (err: any) {
+      const errorMsg = err.message || JSON.stringify(err);
+      console.error('Erro ao salvar escala:', errorMsg);
+      fetchData(); // Reverte o estado local em caso de erro
     } finally {
       setSaving(false);
     }
@@ -199,7 +178,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Carregando Dados...</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Conectando ao Supabase...</p>
         </div>
       </div>
     );
@@ -207,15 +186,13 @@ const App: React.FC = () => {
 
   if (!user) return <Login onLoginSuccess={() => setLoading(true)} />;
 
-  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0];
-
   return (
     <div className="min-h-screen pb-20 bg-gray-50">
       {saving && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in zoom-in duration-300">
-          <div className="bg-green-600 text-white px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-            <i className="fas fa-save animate-pulse"></i>
-            Salvando Alterações
+          <div className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+            <i className="fas fa-sync-alt animate-spin"></i>
+            Sincronizando Banco
           </div>
         </div>
       )}
@@ -228,7 +205,7 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">Escala 2026</h1>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Equipe: {people.length} membros</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Equipe Online</p>
             </div>
           </div>
 
@@ -265,20 +242,20 @@ const App: React.FC = () => {
           <TeamManager 
             people={people} 
             onAdd={addPerson} 
-            onRemove={removePerson} 
+            onRemove={removePerson}
           />
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between bg-[#1e3a8a] text-white p-8 rounded-[40px] shadow-2xl mb-12 relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700"></div>
-              <button onClick={() => changeMonth(-1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
+              <button onClick={() => changeMonth(-1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all z-10 border border-white/10 active:scale-90">
                 <i className="fas fa-chevron-left text-xl"></i>
               </button>
               <div className="text-center z-10">
                 <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter mb-2">{getMonthName(currentMonth)}</h2>
                 <p className="text-blue-200 font-black tracking-[0.4em] text-sm">{currentYear}</p>
               </div>
-              <button onClick={() => changeMonth(1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all active:scale-90 z-10 border border-white/10">
+              <button onClick={() => changeMonth(1)} className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all z-10 border border-white/10 active:scale-90">
                 <i className="fas fa-chevron-right text-xl"></i>
               </button>
             </div>
@@ -301,7 +278,7 @@ const App: React.FC = () => {
       <footer className="max-w-4xl mx-auto px-4 mt-20 text-center">
         <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mb-8"></div>
         <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">
-          Gerenciador de Escala &copy; {currentYear} &bull; v2.5
+          Gerenciador de Escala &copy; 2026 &bull; Cloud Verified
         </p>
       </footer>
     </div>

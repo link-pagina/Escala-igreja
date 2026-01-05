@@ -11,8 +11,8 @@ export interface Assignment {
   id?: string;
   date: string; // Formato YYYY-MM-DD
   period: Period;
-  person1Id: string;
-  person2Id: string;
+  person1Name: string;
+  person2Name: string;
   user_id?: string;
 }
 
