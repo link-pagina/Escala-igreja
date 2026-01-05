@@ -1,4 +1,4 @@
-
+import { supabase } from './supabaseClient';
 import React, { useState } from 'react';
 import { Person } from '../types';
 
@@ -8,29 +8,68 @@ interface TeamManagerProps {
   onRemove: (id: string) => void;
 }
 
-const TeamManager: React.FC<TeamManagerProps> = ({ people, onAdd, onRemove }) => {
-  const [newName, setNewName] = useState('');
+// 1. Esta parte carrega os dados do banco assim que o site abre
+  useEffect(() => {
+    const fetchPeople = async () => {
+      const { data, error } = await supabase
+        .from('equipes')
+        .select('*')
+        .order('nome', { ascending: true });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newName.trim()) {
-      onAdd(newName.trim());
-      setNewName('');
+      if (data) {
+        // Converte o formato do banco para o formato que o seu site entende
+        const formattedPeople = data.map(p => ({
+          id: p.id.toString(),
+          name: p.nome
+        }));
+        setPeople(formattedPeople);
+      }
+    };
+
+    fetchPeople();
+  }, []);
+
+  // 2. Esta função salva o nome no Supabase
+  const handleAddPerson = async (name: string) => {
+    const { data, error } = await supabase
+      .from('equipes')
+      .insert([{ nome: name }])
+      .select();
+
+    if (error) {
+      alert("Erro ao salvar: " + error.message);
+    } else if (data) {
+      const newPerson = { id: data[0].id.toString(), name: name };
+      setPeople(prev => [...prev, newPerson]);
     }
   };
 
-  const exportToTxt = () => {
-    const text = people.map(p => p.name).join('\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'equipes.txt';
-    link.click();
-    URL.revokeObjectURL(url);
+
+  // 3. Esta função remove o nome do Supabase
+  const handleRemovePerson = async (id: string) => {
+    const { error } = await supabase
+      .from('equipes')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert("Erro ao remover");
+    } else {
+      setPeople(prev => prev.filter(p => p.id !== id));
+    }
   };
 
-  return (
+    }
+
+{activeTab === 'teams' && (
+  <TeamManager 
+    people={people} 
+    onAdd={handleAddPerson} 
+    onRemove={handleRemovePerson} 
+  />
+)}
+
+   return (
     <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-8 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
