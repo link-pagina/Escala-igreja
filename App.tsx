@@ -248,7 +248,7 @@ NOTIFY pgrst, 'reload schema';`;
            <div className="space-y-4">
                <div className="flex gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
                  <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm text-blue-600 font-bold text-sm">1</div>
-                 <p className="text-xs text-gray-500 leading-relaxed">Vá ao painel do Supabase > <strong>SQL Editor</strong> > <strong>New Query</strong>.</p>
+                 <p className="text-xs text-gray-500 leading-relaxed">Vá ao painel do Supabase &gt; <strong>SQL Editor</strong> &gt; <strong>New Query</strong>.</p>
                </div>
                <div className="flex gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
                  <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm text-blue-600 font-bold text-sm">2</div>
